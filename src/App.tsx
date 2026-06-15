@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import Toolbar from "./components/Toolbar";
 import EditorArea from "./components/EditorArea";
@@ -27,6 +28,21 @@ function App() {
   // 전역 리스너가 항상 최신 doc 액션/상태를 보도록 ref로 유지.
   const docRef = useRef(doc);
   docRef.current = doc;
+
+  // CLI 인자로 전달된 파일(`mdview <file.md>`)을 시작 시 한 번 열어 바로 편집한다.
+  const startupDone = useRef(false);
+  useEffect(() => {
+    if (!isTauri() || startupDone.current) return;
+    startupDone.current = true;
+    void (async () => {
+      try {
+        const path = await invoke<string | null>("startup_file");
+        if (path) await docRef.current.openPath(path);
+      } catch {
+        // 인자 없음/열기 실패 → 환영 문서 유지.
+      }
+    })();
+  }, []);
 
   // 파일을 열거나 저장(경로 확정)하면 최근 목록에 추가.
   // recent.add는 stable(useCallback)이므로 filePath 변화에만 반응한다.

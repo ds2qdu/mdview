@@ -9,7 +9,6 @@
     "core:default",
     "core:window:allow-destroy",
     "core:window:allow-set-title",
-    "opener:default",
     "dialog:default"
   ]
 }

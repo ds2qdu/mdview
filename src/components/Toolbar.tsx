@@ -91,10 +91,10 @@ export default function Toolbar({
         <div className="seg" role="group" aria-label="편집 모드" title="모드 전환 (Ctrl/Cmd+E)">
           <button
             type="button"
-            className={`seg__btn${mode === "wysiwyg" ? " seg__btn--active" : ""}`}
-            onClick={() => onModeChange("wysiwyg")}
+            className={`seg__btn${mode === "render" ? " seg__btn--active" : ""}`}
+            onClick={() => onModeChange("render")}
           >
-            WYSIWYG
+            Render
           </button>
           <button
             type="button"

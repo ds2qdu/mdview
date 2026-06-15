@@ -6,7 +6,7 @@ export const WELCOME_MD = `# mdview에 오신 것을 환영합니다
 
 ## 주요 기능
 
-- WYSIWYG 렌더링 — 지금 보고 있는 이 화면
+- Render 모드 — 지금 보고 있는 이 화면(보이는 그대로 편집)
 - Source 모드 — 오른쪽 위 토글로 원본 markdown 보기
 - 파일 열기 / 저장 — \`Ctrl/Cmd + O\` / \`S\`
 
@@ -28,7 +28,7 @@ function hello() {
 | 편집 | 다음 단계 |
 
 - [x] 마크다운 읽고 렌더링
-- [ ] WYSIWYG에서 직접 편집
+- [ ] Render 모드에서 직접 편집
 
 자세히: [Tauri 문서](https://tauri.app)
 `;

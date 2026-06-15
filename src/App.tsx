@@ -20,7 +20,7 @@ function baseName(path: string | null): string | null {
 
 function App() {
   const { theme, toggleTheme } = useTheme();
-  const [mode, setMode] = useState<EditorMode>("wysiwyg");
+  const [mode, setMode] = useState<EditorMode>("render");
   const doc = useDocument();
   const recent = useRecentFiles();
 
@@ -51,7 +51,7 @@ function App() {
       const key = e.key.toLowerCase();
       if (key === "e") {
         e.preventDefault();
-        setMode((m) => (m === "wysiwyg" ? "source" : "wysiwyg"));
+        setMode((m) => (m === "render" ? "source" : "render"));
         return;
       }
       if (isTauri()) return;

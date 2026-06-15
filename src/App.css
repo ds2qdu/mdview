@@ -185,8 +185,8 @@ body {
   outline: none;
 }
 
-/* ---------- Milkdown (WYSIWYG) ---------- */
-.editor__wysiwyg {
+/* ---------- Milkdown (Render 모드) ---------- */
+.editor__render {
   flex: 1 1 auto;
   width: 100%;
   overflow: auto;

@@ -20,7 +20,7 @@ export default function StatusBar({ mode, fileName, dirty, charCount }: StatusBa
       <span className="statusbar__spacer" />
       <span className="statusbar__item">{charCount}자</span>
       <span className="statusbar__divider" />
-      <span className="statusbar__item">{mode === "wysiwyg" ? "WYSIWYG" : "Source"}</span>
+      <span className="statusbar__item">{mode === "render" ? "Render" : "Source"}</span>
     </footer>
   );
 }

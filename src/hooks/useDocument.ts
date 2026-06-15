@@ -15,7 +15,7 @@ export interface UseDocument {
   content: string;
   /** 마지막 저장 이후 변경 여부. */
   dirty: boolean;
-  /** 외부 로드(열기/새로) 때마다 증가 — WYSIWYG 에디터 리마운트 키. */
+  /** 외부 로드(열기/새로) 때마다 증가 — Render(WYSIWYG) 에디터 리마운트 키. */
   loadId: number;
   /** 사용자 편집으로 본문 갱신(= dirty). */
   setContent: (next: string) => void;

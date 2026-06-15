@@ -13,7 +13,7 @@ interface MilkdownEditorProps {
 }
 
 /**
- * WYSIWYG 에디터. 편집하면 markdown으로 직렬화해 onChange로 전달한다(Phase 5).
+ * Render(WYSIWYG) 에디터. 편집하면 markdown으로 직렬화해 onChange로 전달한다(Phase 5).
  * - 초기 content는 defaultValueCtx로 한 번 주입. 외부 변경(파일 열기/새로)은
  *   상위 EditorArea가 key={loadId}로 리마운트해 반영한다(여기서 prop을 다시 읽지 않음 → 루프 없음).
  * - mounted 이후의 실제 편집만 onChange로 흘려보낸다(초기 로드는 dirty로 잡지 않음).

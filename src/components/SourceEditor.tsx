@@ -60,6 +60,7 @@ export default function SourceEditor({ content, onChange }: SourceEditorProps) {
   return (
     <CodeMirror
       className="editor__source"
+      theme="none"
       value={content}
       onChange={onChange}
       extensions={extensions}

@@ -1,13 +1,13 @@
 # mdview
 
 크로스플랫폼(Windows · macOS) **마크다운 노트패드**.
-`.md` 파일을 구조에 맞게 WYSIWYG로 렌더링하고, 편집하면 자동으로 markdown으로 저장합니다. WYSIWYG ↔ raw markdown 모드 전환을 지원합니다.
+`.md` 파일을 구조에 맞게 렌더링(Render 모드)하고, 편집하면 자동으로 markdown으로 저장합니다. Render ↔ Source(raw markdown) 모드 전환을 지원합니다.
 
 ## 기술 스택
 
 - **Tauri v2** — 데스크톱 셸
 - **React 19 + TypeScript + Vite** — 프론트엔드
-- **Milkdown** — WYSIWYG 마크다운 에디터 (예정)
+- **Milkdown** — Render 모드(WYSIWYG) 마크다운 에디터
 - **CodeMirror 6** — raw 소스 모드 (예정)
 
 ---

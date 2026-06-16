@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -28,6 +28,26 @@ function App() {
   // 전역 리스너가 항상 최신 doc 액션/상태를 보도록 ref로 유지.
   const docRef = useRef(doc);
   docRef.current = doc;
+
+  // 시작 시 창 표시 제어: tauri.conf의 visible:false로 창을 숨겨 두고,
+  // 에디터가 초기 문서를 다 렌더링한 뒤(onReady) 비로소 보여 흰 화면/로딩을 가린다.
+  const shownRef = useRef(false);
+  const revealWindow = useCallback(() => {
+    if (shownRef.current || !isTauri()) return;
+    shownRef.current = true;
+    // 페인트가 끝난 다음 프레임에 표시 → 반쯤 그려진 프레임 노출 방지.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        void getCurrentWindow().show().catch(() => {});
+      }),
+    );
+  }, []);
+
+  // 안전장치: 에디터 준비가 어떤 이유로 늦어도/실패해도 일정 시간 뒤엔 반드시 표시.
+  useEffect(() => {
+    const t = setTimeout(revealWindow, 3000);
+    return () => clearTimeout(t);
+  }, [revealWindow]);
 
   // CLI 인자로 전달된 파일(`mdview <file.md>`)을 시작 시 한 번 열어 바로 편집한다.
   const startupDone = useRef(false);
@@ -146,6 +166,7 @@ function App() {
         content={doc.content}
         loadId={doc.loadId}
         onChange={doc.setContent}
+        onReady={revealWindow}
       />
       <StatusBar
         mode={mode}

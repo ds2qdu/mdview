@@ -5,6 +5,25 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>mdview</title>
+    <style>
+      /* 임계 테마 토큰 — JS 번들/App.css 로드 전에 배경을 칠해 흰 화면 깜빡임 방지.
+         (값은 App.css의 --bg/--text와 동일하게 유지) */
+      :root {
+        --bg: #ffffff;
+        --text: #1f2328;
+      }
+      :root[data-theme="dark"] {
+        --bg: #0d1117;
+        --text: #e6edf3;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background-color: var(--bg);
+        color: var(--text);
+      }
+    </style>
     <script>
       // 테마 초기화 — 첫 페인트 전에 data-theme를 적용해 깜빡임(flash) 방지
       (function () {

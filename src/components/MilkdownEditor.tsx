@@ -10,6 +10,8 @@ import "@milkdown/kit/prose/tables/style/tables.css";
 interface MilkdownEditorProps {
   content: string;
   onChange: (markdown: string) => void;
+  /** 에디터가 초기 문서를 렌더링(mounted)한 직후 1회 호출. */
+  onReady?: () => void;
 }
 
 /**
@@ -18,9 +20,11 @@ interface MilkdownEditorProps {
  *   상위 EditorArea가 key={loadId}로 리마운트해 반영한다(여기서 prop을 다시 읽지 않음 → 루프 없음).
  * - mounted 이후의 실제 편집만 onChange로 흘려보낸다(초기 로드는 dirty로 잡지 않음).
  */
-function MilkdownInner({ content, onChange }: MilkdownEditorProps) {
+function MilkdownInner({ content, onChange, onReady }: MilkdownEditorProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const ready = useRef(false);
 
   useEditor((root) =>
@@ -31,6 +35,7 @@ function MilkdownInner({ content, onChange }: MilkdownEditorProps) {
         const l = ctx.get(listenerCtx);
         l.mounted(() => {
           ready.current = true;
+          onReadyRef.current?.();
         });
         l.markdownUpdated((_, markdown, prevMarkdown) => {
           if (!ready.current) return;
@@ -46,10 +51,10 @@ function MilkdownInner({ content, onChange }: MilkdownEditorProps) {
   return <Milkdown />;
 }
 
-export default function MilkdownEditor({ content, onChange }: MilkdownEditorProps) {
+export default function MilkdownEditor({ content, onChange, onReady }: MilkdownEditorProps) {
   return (
     <MilkdownProvider>
-      <MilkdownInner content={content} onChange={onChange} />
+      <MilkdownInner content={content} onChange={onChange} onReady={onReady} />
     </MilkdownProvider>
   );
 }

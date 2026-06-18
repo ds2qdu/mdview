@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::menu::{Menu, MenuItem, Submenu};
@@ -100,6 +101,68 @@ fn resolve_arg_path(args: &[String], cwd: &Path) -> Option<String> {
     Some(abs.to_string_lossy().into_owned())
 }
 
+/// 확장자로 이미지 MIME 추정. 지원 안 하면 None.
+fn image_mime(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        "ico" => "image/x-icon",
+        _ => return None,
+    })
+}
+
+/// 이미지 data URL 최대 크기(원본 바이트 기준). 과도한 base64 문자열/메모리 방지.
+const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
+
+/// 주어진 경로의 이미지를 읽어 `data:<mime>;base64,...` 문자열로 반환한다.
+/// Render 모드에서 `![[name]]`(attachments)의 표시 src로 사용한다(웹뷰가 임의 로컬 경로를
+/// 직접 못 읽으므로 data URL로 인라인). 정규 파일/지원 형식/크기 가드.
+#[tauri::command]
+fn read_image_data_url(path: String) -> Result<String, String> {
+    let p = Path::new(&path);
+    let meta = fs::metadata(p).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("정규 파일이 아닙니다.".to_string());
+    }
+    let mime = image_mime(p).ok_or_else(|| "지원하지 않는 이미지 형식입니다.".to_string())?;
+    if meta.len() > MAX_IMAGE_BYTES {
+        return Err("이미지가 너무 큽니다.".to_string());
+    }
+    let bytes = fs::read(p).map_err(|e| e.to_string())?;
+    Ok(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
+}
+
+/// 설정 파일 이름 — 실행 파일과 같은 폴더에 두는 포터블 설정.
+const SETTINGS_FILE: &str = "mdview.config.json";
+
+/// 실행 파일이 위치한 디렉터리의 설정 파일 경로.
+/// 경로는 실행 파일 기준으로만 만든다(사용자 입력 경로 아님 → 트래버설 없음).
+fn settings_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join(SETTINGS_FILE))
+}
+
+/// 실행 파일 옆 설정 파일을 읽어 JSON 문자열로 반환. 없거나 못 읽으면 None
+/// (프론트가 기본값/ localStorage 폴백 사용).
+#[tauri::command]
+fn load_settings() -> Option<String> {
+    fs::read_to_string(settings_path()?).ok()
+}
+
+/// 프론트가 직렬화한 설정 JSON을 실행 파일 옆에 저장한다. 보호된 설치 경로 등으로
+/// 쓰기에 실패하면 Err 반환(프론트가 무시하고 localStorage로 폴백).
+#[tauri::command]
+fn save_settings(contents: String) -> Result<(), String> {
+    let path = settings_path().ok_or_else(|| "설정 경로를 확인할 수 없습니다.".to_string())?;
+    fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
 /// CLI로 전달된 열 파일 경로. `mdview <file.md>` 형태. 없으면 None.
 /// 프론트가 시작 시 호출해 해당 파일을 바로 연다(편집 모드).
 #[tauri::command]
@@ -148,7 +211,14 @@ pub fn run() {
                 let _ = app.emit("menu", id.to_string());
             }
         })
-        .invoke_handler(tauri::generate_handler![read_file, write_file, startup_file])
+        .invoke_handler(tauri::generate_handler![
+            read_file,
+            write_file,
+            startup_file,
+            load_settings,
+            save_settings,
+            read_image_data_url
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

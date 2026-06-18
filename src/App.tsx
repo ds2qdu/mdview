@@ -6,7 +6,8 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import Toolbar from "./components/Toolbar";
 import EditorArea from "./components/EditorArea";
 import StatusBar from "./components/StatusBar";
-import { useTheme } from "./hooks/useTheme";
+import SettingsDialog from "./components/SettingsDialog";
+import { useSettings } from "./hooks/useSettings";
 import { useDocument } from "./hooks/useDocument";
 import { useRecentFiles } from "./hooks/useRecentFiles";
 import { isTauri } from "./lib/tauri";
@@ -19,9 +20,17 @@ function baseName(path: string | null): string | null {
   return parts[parts.length - 1] || path;
 }
 
+/** 파일 경로에서 폴더 부분만. 경로 없으면 null(=`![[name]]` 해석 불가). */
+function dirName(path: string | null): string | null {
+  if (!path) return null;
+  const i = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  return i > 0 ? path.slice(0, i) : null;
+}
+
 function App() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, vim, setTheme, setVim } = useSettings();
   const [mode, setMode] = useState<EditorMode>("render");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const doc = useDocument();
   const recent = useRecentFiles();
 
@@ -68,6 +77,11 @@ function App() {
       if (key === "e") {
         e.preventDefault();
         setMode((m) => (m === "render" ? "source" : "render"));
+        return;
+      }
+      if (key === ",") {
+        e.preventDefault();
+        setSettingsOpen((o) => !o);
         return;
       }
       if (isTauri()) return;
@@ -131,8 +145,7 @@ function App() {
       <Toolbar
         mode={mode}
         onModeChange={setMode}
-        theme={theme}
-        onToggleTheme={toggleTheme}
+        onOpenSettings={() => setSettingsOpen(true)}
         onNew={() => void doc.newFile()}
         onOpen={() => void doc.openFile()}
         onSave={() => void doc.saveFile()}
@@ -146,12 +159,24 @@ function App() {
         content={doc.content}
         loadId={doc.loadId}
         onChange={doc.setContent}
+        vimEnabled={vim}
+        onSave={() => void doc.saveFile()}
+        docDir={dirName(doc.filePath)}
       />
       <StatusBar
         mode={mode}
         fileName={baseName(doc.filePath)}
         dirty={doc.dirty}
         charCount={doc.content.length}
+        vim={vim}
+      />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        vim={vim}
+        onThemeChange={setTheme}
+        onVimChange={setVim}
       />
     </div>
   );

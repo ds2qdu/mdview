@@ -5,12 +5,14 @@ interface StatusBarProps {
   fileName: string | null;
   dirty: boolean;
   charCount: number;
+  /** Vim 키바인딩 활성 여부(Source 모드에서만 실제 적용). */
+  vim: boolean;
 }
 
 /**
- * 하단 상태바. 파일명/수정됨(*)/글자수/모드 표시.
+ * 하단 상태바. 파일명/수정됨(*)/글자수/Vim/모드 표시.
  */
-export default function StatusBar({ mode, fileName, dirty, charCount }: StatusBarProps) {
+export default function StatusBar({ mode, fileName, dirty, charCount, vim }: StatusBarProps) {
   return (
     <footer className="statusbar">
       <span className="statusbar__item statusbar__file">
@@ -19,6 +21,12 @@ export default function StatusBar({ mode, fileName, dirty, charCount }: StatusBa
       </span>
       <span className="statusbar__spacer" />
       <span className="statusbar__item">{charCount}자</span>
+      {vim && mode === "source" && (
+        <>
+          <span className="statusbar__divider" />
+          <span className="statusbar__item">Vim</span>
+        </>
+      )}
       <span className="statusbar__divider" />
       <span className="statusbar__item">{mode === "render" ? "Render" : "Source"}</span>
     </footer>

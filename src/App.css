@@ -185,6 +185,30 @@ body {
   outline: none;
 }
 
+/* Vim 상태바/명령줄 패널 — 우리 테마에 맞춤. */
+.editor__source .cm-panels {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-top: 1px solid var(--border);
+}
+
+.editor__source .cm-vim-panel,
+.editor__source .cm-panel.cm-vim-panel {
+  padding: 3px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.editor__source .cm-vim-panel input {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
 /* ---------- Milkdown (Render 모드) ---------- */
 .editor__render {
   flex: 1 1 auto;
@@ -329,6 +353,34 @@ body {
   border-radius: 6px;
 }
 
+/* 이미지 NodeView 래퍼(<span>) — 실제 <img>를 감싼다. */
+.milkdown .milkdown-image-wrap {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+
+/* Obsidian식 임베드(`![[name]]`)는 블록으로 — 같은 문단의 뒤 텍스트가 이미지 아래로 내려간다. */
+.milkdown .milkdown-image-wrap--embed {
+  display: block;
+  margin: 0.2em 0;
+}
+
+/* `![[name]]`(attachments) 또는 URL 이미지를 못 찾았을 때의 자리표시. */
+.milkdown img.milkdown-image--missing {
+  display: inline-flex;
+  align-items: center;
+  min-width: 140px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .milkdown table {
   margin: 0 0 0.9em;
   border-collapse: collapse;
@@ -460,4 +512,151 @@ body {
   width: 1px;
   height: 12px;
   background-color: var(--border);
+}
+
+/* ---------- Settings modal (옵션창) ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.modal__panel {
+  width: min(420px, 100%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px var(--shadow);
+  overflow: hidden;
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal__body {
+  padding: 4px 16px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.field:last-child {
+  border-bottom: none;
+}
+
+.field__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.field__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 읽기 전용 정보 행(버전 · 이메일). */
+.field__value {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  user-select: text;
+}
+
+.field__value--link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.field__value--link:hover {
+  text-decoration: underline;
+}
+
+.modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.modal__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 토글 스위치 */
+.switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.switch__track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.switch input:checked + .switch__track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch input:checked + .switch__track .switch__thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

@@ -9,6 +9,7 @@
 - **React 19 + TypeScript + Vite** — 프론트엔드
 - **Milkdown** — Render 모드(WYSIWYG) 마크다운 에디터
 - **CodeMirror 6** — raw 소스 모드 (예정)
+- **Vim** — PlugIn 모드 (예정)
 
 ---
 

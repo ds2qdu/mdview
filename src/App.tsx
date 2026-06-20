@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -11,6 +11,7 @@ import { useSettings } from "./hooks/useSettings";
 import { useDocument } from "./hooks/useDocument";
 import { useRecentFiles } from "./hooks/useRecentFiles";
 import { isTauri } from "./lib/tauri";
+import type { ScrollAnchor } from "./lib/scrollAnchor";
 import type { EditorMode } from "./types";
 import "./App.css";
 
@@ -37,6 +38,23 @@ function App() {
   // 전역 리스너가 항상 최신 doc 액션/상태를 보도록 ref로 유지.
   const docRef = useRef(doc);
   docRef.current = doc;
+
+  // 모드 전환 시 스크롤 위치 유지(제목 앵커). 전환 시점에 "떠나는" 에디터가 captureCurrentRef로 앵커를
+  // 동기 캡처 → setMode → "들어오는" 에디터가 pendingAnchorRef를 1회 소비해 복원한다.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const pendingAnchorRef = useRef<ScrollAnchor | null>(null);
+  const captureCurrentRef = useRef<(() => ScrollAnchor | null) | null>(null);
+
+  const switchMode = useCallback((next: EditorMode) => {
+    pendingAnchorRef.current = captureCurrentRef.current?.() ?? null;
+    setMode(next);
+  }, []);
+
+  // 파일 열기/새로(loadId 변경) 시엔 stale 앵커를 버린다(새 문서는 맨 위에서 시작).
+  useEffect(() => {
+    pendingAnchorRef.current = null;
+  }, [doc.loadId]);
 
   // CLI 인자로 전달된 파일(`mdview <file.md>`)을 시작 시 한 번 열어 바로 편집한다.
   const startupDone = useRef(false);
@@ -76,7 +94,7 @@ function App() {
       const key = e.key.toLowerCase();
       if (key === "e") {
         e.preventDefault();
-        setMode((m) => (m === "render" ? "source" : "render"));
+        switchMode(modeRef.current === "render" ? "source" : "render");
         return;
       }
       if (key === ",") {
@@ -144,7 +162,7 @@ function App() {
     <div className="app">
       <Toolbar
         mode={mode}
-        onModeChange={setMode}
+        onModeChange={switchMode}
         onOpenSettings={() => setSettingsOpen(true)}
         onNew={() => void doc.newFile()}
         onOpen={() => void doc.openFile()}
@@ -162,6 +180,8 @@ function App() {
         vimEnabled={vim}
         onSave={() => void doc.saveFile()}
         docDir={dirName(doc.filePath)}
+        pendingAnchorRef={pendingAnchorRef}
+        captureCurrentRef={captureCurrentRef}
       />
       <StatusBar
         mode={mode}

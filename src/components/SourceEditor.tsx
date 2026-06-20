@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject } from "react";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
+import { ViewPlugin } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
-import { vim, Vim } from "@replit/codemirror-vim";
+import { vim, Vim, getCM } from "@replit/codemirror-vim";
 import { captureFromTops } from "../lib/scrollAnchor";
 import type { ScrollAnchor } from "../lib/scrollAnchor";
+import { isImeDebugEnabled, pushImeLog } from "../lib/imeDebug";
 
 interface SourceEditorProps {
   content: string;
@@ -214,9 +216,71 @@ export default function SourceEditor({
     [pendingAnchorRef],
   );
 
+  // 한글 IME + Vim Normal 모드 명령 처리 플러그인.
+  // Normal/Visual의 글자키(KeyA–Z)는 IME가 자모로 바꾸므로 e.key 대신 e.code(물리 키 위치)로 명령을
+  // 실행한다 → IME 켜짐/꺼짐·대문자(Shift) 무관하게 정확(예: 물리 'j'키=ㅓ → 'j', Shift=대문자).
+  // 라이브러리 keydown을 막아(preventDefault + stopImmediatePropagation) 이중 실행을 방지하고, IME 합성
+  // 삽입도 막으려 시도한다. 숫자·기호·특수키는 IME 영향이 없어 라이브러리가 처리한다.
+  // 또한 Normal 모드 IME 이벤트를 화면 오버레이용 버퍼에 기록한다(콘솔 없는 exe 진단용).
+  const vimImePlugin = useMemo(
+    () =>
+      ViewPlugin.define((view) => {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const state = () => (getCM(view) as any)?.state;
+        const capture = (type: string, e: any) => {
+          if (!isImeDebugEnabled()) return;
+          const st = state();
+          const vim = st?.vim;
+          if (!vim || vim.insertMode) return;
+          if (type === "keydown") {
+            const k = e.key;
+            const imeish =
+              k === "Process" || k === "Unidentified" || k === "Dead" || (k && k.length === 1 && k.charCodeAt(0) > 0x7f);
+            if (!imeish) return;
+          }
+          pushImeLog({
+            type,
+            key: e.key,
+            code: e.code,
+            kc: e.keyCode,
+            comp: e.isComposing,
+            data: e.data,
+            inputType: e.inputType,
+            mode: "NORM",
+            unti: st?.vimPlugin?.useNextTextInput,
+          });
+        };
+        const onKeydown = (e: KeyboardEvent) => {
+          capture("keydown", e);
+          if (e.ctrlKey || e.altKey || e.metaKey) return; // 조합키는 라이브러리에 맡김
+          const m = /^Key([A-Z])$/.exec(e.code || "");
+          if (!m) return; // 글자키만(숫자·기호·특수키는 IME 영향 없음 → 라이브러리 처리)
+          const st = state();
+          const vim = st?.vim;
+          if (!vim || vim.insertMode) return; // Normal/Visual 모드만
+          const cm = getCM(view);
+          if (cm) Vim.handleKey(cm, e.shiftKey ? m[1] : m[1].toLowerCase(), "user");
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        };
+        const otherTypes = ["beforeinput", "compositionstart", "compositionupdate", "compositionend", "input"];
+        const onOther = (e: any) => capture(e.type, e);
+        view.contentDOM.addEventListener("keydown", onKeydown, true);
+        otherTypes.forEach((tp) => view.contentDOM.addEventListener(tp, onOther, true));
+        return {
+          destroy() {
+            view.contentDOM.removeEventListener("keydown", onKeydown, true);
+            otherTypes.forEach((tp) => view.contentDOM.removeEventListener(tp, onOther, true));
+          },
+        };
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+      }),
+    [],
+  );
+
   const extensions = useMemo(
-    () => (vimEnabled ? [vim({ status: true }), ...baseExtensions] : baseExtensions),
-    [vimEnabled],
+    () => (vimEnabled ? [vim({ status: true }), vimImePlugin, ...baseExtensions] : baseExtensions),
+    [vimEnabled, vimImePlugin],
   );
 
   return (

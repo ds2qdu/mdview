@@ -6,8 +6,10 @@ interface SettingsDialogProps {
   onClose: () => void;
   theme: Theme;
   vim: boolean;
+  debug: boolean;
   onThemeChange: (theme: Theme) => void;
   onVimChange: (vim: boolean) => void;
+  onDebugChange: (debug: boolean) => void;
 }
 
 /**
@@ -20,8 +22,10 @@ export default function SettingsDialog({
   onClose,
   theme,
   vim,
+  debug,
   onThemeChange,
   onVimChange,
+  onDebugChange,
 }: SettingsDialogProps) {
   useEffect(() => {
     if (!open) return;
@@ -86,6 +90,23 @@ export default function SettingsDialog({
                 type="checkbox"
                 checked={vim}
                 onChange={(e) => onVimChange(e.target.checked)}
+              />
+              <span className="switch__track" aria-hidden="true">
+                <span className="switch__thumb" />
+              </span>
+            </label>
+          </div>
+
+          <div className="field">
+            <span className="field__label">
+              디버그 모드
+              <span className="field__hint">한글 IME 진단 오버레이를 화면에 표시합니다.</span>
+            </span>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={debug}
+                onChange={(e) => onDebugChange(e.target.checked)}
               />
               <span className="switch__track" aria-hidden="true">
                 <span className="switch__thumb" />

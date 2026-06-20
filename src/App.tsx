@@ -7,10 +7,12 @@ import Toolbar from "./components/Toolbar";
 import EditorArea from "./components/EditorArea";
 import StatusBar from "./components/StatusBar";
 import SettingsDialog from "./components/SettingsDialog";
+import ImeDebugOverlay from "./components/ImeDebugOverlay";
 import { useSettings } from "./hooks/useSettings";
 import { useDocument } from "./hooks/useDocument";
 import { useRecentFiles } from "./hooks/useRecentFiles";
 import { isTauri } from "./lib/tauri";
+import { setImeDebugEnabled } from "./lib/imeDebug";
 import type { ScrollAnchor } from "./lib/scrollAnchor";
 import type { EditorMode } from "./types";
 import "./App.css";
@@ -29,7 +31,7 @@ function dirName(path: string | null): string | null {
 }
 
 function App() {
-  const { theme, vim, setTheme, setVim } = useSettings();
+  const { theme, vim, debug, setTheme, setVim, setDebug } = useSettings();
   const [mode, setMode] = useState<EditorMode>("render");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const doc = useDocument();
@@ -55,6 +57,11 @@ function App() {
   useEffect(() => {
     pendingAnchorRef.current = null;
   }, [doc.loadId]);
+
+  // 디버그 모드(IME 진단 오버레이) 설정을 진단 모듈에 반영.
+  useEffect(() => {
+    setImeDebugEnabled(debug);
+  }, [debug]);
 
   // CLI 인자로 전달된 파일(`mdview <file.md>`)을 시작 시 한 번 열어 바로 편집한다.
   const startupDone = useRef(false);
@@ -195,9 +202,12 @@ function App() {
         onClose={() => setSettingsOpen(false)}
         theme={theme}
         vim={vim}
+        debug={debug}
         onThemeChange={setTheme}
         onVimChange={setVim}
+        onDebugChange={setDebug}
       />
+      <ImeDebugOverlay enabled={debug} />
     </div>
   );
 }

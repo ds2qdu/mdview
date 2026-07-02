@@ -660,3 +660,39 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* 파일 드래그&드롭 오버레이 (드래그 중에만 표시) */
+.dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none; /* 네이티브 drop을 가리지 않도록 */
+}
+
+.dropzone__box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 48px;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 40px var(--shadow);
+}
+
+.dropzone__icon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.dropzone__text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Editor, rootCtx, defaultValueCtx } from "@milkdown/kit/core";
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from "@milkdown/kit/core";
 import {
   commonmark,
   imageSchema,
@@ -9,11 +9,13 @@ import {
 } from "@milkdown/kit/preset/commonmark";
 import { gfm, extendListItemSchemaForTask } from "@milkdown/kit/preset/gfm";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
-import { $view } from "@milkdown/kit/utils";
+import { $view, $prose } from "@milkdown/kit/utils";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
+import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
-import type { NodeViewConstructor } from "@milkdown/kit/prose/view";
+import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { invoke } from "@tauri-apps/api/core";
+import { message } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "../lib/tauri";
 import { WIKI_SCHEME, wikiToSentinel, sentinelToWiki, wikiNameFromSrc } from "../lib/wikiImage";
 import "@milkdown/kit/prose/view/style/prosemirror.css";
@@ -119,6 +121,55 @@ function stripEmptyLineBr(md: string): string {
     .join("\n");
 }
 
+// 문서가 문단(paragraph)으로 끝나지 않으면(끝이 코드블록·표·이미지 등) 맨 끝에 빈 문단 하나를 유지한다.
+// ProseMirror는 종단 노드 뒤로 빠져나갈 문단이 없으면 커서가 갇혀, 마지막이 코드블록이면 그 아래로
+// 내려가/클릭해 새 텍스트를 쓸 수 없다(Source 모드엔 없는 문제). 빈 문단을 항상 뒤에 둬서 해결한다.
+// 내용이 실제로 바뀐 트랜잭션(docChanged)에만 반응 → 로드 직후 단순 클릭/선택으로 문단이 붙어
+// dirty로 잡히는 일이 없다(초기 삽입은 마운트 시 addToHistory:false로 별도 처리).
+const trailingParagraph = $prose(
+  () =>
+    new Plugin({
+      key: new PluginKey("mdview-trailing-paragraph"),
+      appendTransaction: (trs, _oldState, newState) => {
+        if (!trs.some((tr) => tr.docChanged)) return null;
+        const last = newState.doc.lastChild;
+        if (last && last.type.name === "paragraph") return null;
+        const node = newState.schema.nodes.paragraph?.createAndFill();
+        if (!node) return null;
+        return newState.tr.insert(newState.doc.content.size, node);
+      },
+    }),
+);
+
+/** Blob/File → `data:<mime>;base64,…`. 붙여넣기 이미지를 Rust로 넘겨 파일 저장할 때 쓴다. */
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(r.error ?? new Error("read error"));
+    r.readAsDataURL(blob);
+  });
+}
+
+/** Obsidian식 붙여넣기 파일명 stem: `Pasted image YYYYMMDDHHmmss`(확장자 제외, 로컬 시각). */
+function pastedImageStem(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `Pasted image ${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+/** clipboard 항목들에서 첫 이미지 파일을 꺼낸다. 없으면 null(→ 기본 붙여넣기에 맡김). */
+function imageFileFromClipboard(data: DataTransfer | null): File | null {
+  if (!data) return null;
+  for (const item of data.items) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) return file;
+    }
+  }
+  return null;
+}
+
 interface MilkdownEditorProps {
   content: string;
   onChange: (markdown: string) => void;
@@ -205,12 +256,71 @@ function MilkdownInner({ content, onChange, docDir, onReady }: MilkdownEditorPro
         },
     );
 
+    // 이미지 붙여넣기: clipboard의 이미지를 <문서폴더>/attachments/에 파일로 저장하고 `![[name]]`
+    // (센티넬 이미지 노드)로 삽입한다. 기본 동작(휘발성 blob: URL 삽입)을 preventDefault로 대체.
+    // 문서가 미저장(폴더 미상)이면 저장 위치가 없어 안내만 하고 기본 붙여넣기는 막는다.
+    const insertPastedImage = async (view: EditorView, file: File) => {
+      const dir = docDirRef.current;
+      if (!dir) {
+        await message("이미지를 붙여넣으려면 먼저 문서를 저장하세요.\n(attachments 폴더가 문서와 같은 폴더에 만들어집니다.)", {
+          title: "저장 필요",
+          kind: "warning",
+        });
+        return;
+      }
+      try {
+        const dataUrl = await blobToDataUrl(file);
+        const name = await invoke<string>("save_pasted_image", {
+          docDir: dir,
+          nameStem: pastedImageStem(),
+          dataUrl,
+        });
+        // 센티넬 src → 직렬화 시 `![[name]]`로 복원되고 NodeView가 attachments에서 표시한다.
+        const image = view.state.schema.nodes.image?.create({
+          src: WIKI_SCHEME + encodeURIComponent(name),
+        });
+        if (image) view.dispatch(view.state.tr.replaceSelectionWith(image, false).scrollIntoView());
+      } catch (e) {
+        await message(`이미지를 저장할 수 없습니다:\n${e}`, { title: "붙여넣기 실패", kind: "error" });
+      }
+    };
+
+    const imagePaste = $prose(
+      () =>
+        new Plugin({
+          key: new PluginKey("mdview-image-paste"),
+          props: {
+            handlePaste: (view, event) => {
+              if (!isTauri()) return false; // 데스크톱(Tauri)에서만 파일 저장 가능
+              const file = imageFileFromClipboard(event.clipboardData);
+              if (!file) return false; // 이미지가 아니면 기본 붙여넣기
+              event.preventDefault();
+              void insertPastedImage(view, file);
+              return true;
+            },
+          },
+        }),
+    );
+
     return Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root);
         ctx.set(defaultValueCtx, wikiToSentinel(stripEmptyLineBr(content)));
         const l = ctx.get(listenerCtx);
         l.mounted(() => {
+          // 초기 문서가 문단으로 안 끝나면(끝 코드블록 등) 빈 문단 1개를 붙인다 → 그 아래로 커서 이동 가능.
+          // addToHistory:false 트랜잭션은 리스너가 무시(markdownUpdated 미발화)하므로 로드가 dirty로 잡히지
+          // 않고 doc.content(저장본)도 원본 그대로 유지된다. 사용자가 실제로 편집할 때만 반영된다.
+          const view = ctx.get(editorViewCtx);
+          const last = view.state.doc.lastChild;
+          if (!last || last.type.name !== "paragraph") {
+            const node = view.state.schema.nodes.paragraph?.createAndFill();
+            if (node) {
+              view.dispatch(
+                view.state.tr.insert(view.state.doc.content.size, node).setMeta("addToHistory", false),
+              );
+            }
+          }
           ready.current = true;
           onReadyRef.current?.();
         });
@@ -223,7 +333,9 @@ function MilkdownInner({ content, onChange, docDir, onReady }: MilkdownEditorPro
       .use(commonmarkPatched)
       .use(gfmPatched)
       .use(listener)
-      .use(imageView);
+      .use(imageView)
+      .use(imagePaste)
+      .use(trailingParagraph);
   });
 
   return <Milkdown />;

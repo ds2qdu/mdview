@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -30,10 +31,18 @@ function dirName(path: string | null): string | null {
   return i > 0 ? path.slice(0, i) : null;
 }
 
+/** markdown으로 취급할 확장자(Rust `MD_EXTS` · 열기 다이얼로그 필터와 일치). */
+const MD_EXTS = ["md", "markdown", "mdown", "mkd"];
+function isMarkdownPath(path: string): boolean {
+  const dot = path.lastIndexOf(".");
+  return dot >= 0 && MD_EXTS.includes(path.slice(dot + 1).toLowerCase());
+}
+
 function App() {
   const { theme, vim, debug, setTheme, setVim, setDebug } = useSettings();
   const [mode, setMode] = useState<EditorMode>("render");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const doc = useDocument();
   const recent = useRecentFiles();
 
@@ -145,6 +154,49 @@ function App() {
     };
   }, []);
 
+  // 파일 드래그&드롭으로 열기 (Tauri 네이티브 drag-drop — 웹뷰 HTML5 drop은 파일 경로를 주지 않음).
+  // markdown 파일을 드롭하면 openPath로 연다(미저장 변경 확인은 openPath가 처리). 여러 개면 첫 markdown만.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        const p = event.payload;
+        if (p.type === "enter") {
+          setDragOver(p.paths.some(isMarkdownPath)); // markdown이 하나라도 있을 때만 하이라이트
+        } else if (p.type === "leave") {
+          setDragOver(false);
+        } else if (p.type === "drop") {
+          setDragOver(false);
+          const md = p.paths.find(isMarkdownPath);
+          if (md) void docRef.current.openPath(md);
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  // 창이 다시 활성화되면 외부 변경을 확인한다(다른 프로그램/동기화로 파일이 바뀐 경우).
+  // clean이면 자동 리로드, dirty면 확인. (Tauri 런타임에서만.)
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (focused) void docRef.current.checkExternalChange();
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   // 창 닫기 시 저장되지 않은 변경 확인 (Tauri 런타임에서만).
   useEffect(() => {
     if (!isTauri()) return;
@@ -208,6 +260,14 @@ function App() {
         onDebugChange={setDebug}
       />
       <ImeDebugOverlay enabled={debug} />
+      {dragOver && (
+        <div className="dropzone" aria-hidden="true">
+          <div className="dropzone__box">
+            <div className="dropzone__icon">📄</div>
+            <div className="dropzone__text">여기에 놓아 markdown 파일 열기</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

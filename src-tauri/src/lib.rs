@@ -7,27 +7,63 @@ use tauri::Emitter;
 /// markdown으로 취급할 확장자.
 const MD_EXTS: [&str; 4] = ["md", "markdown", "mdown", "mkd"];
 
-/// 지정한 경로의 텍스트 파일을 읽어 문자열로 반환한다. 정규 파일만 허용한다
+/// 파일 메타데이터의 수정 시각을 epoch 기준 밀리초(f64)로. 미지원/오류면 None.
+/// (JS 수 범위 내 정수 ms라 프론트에서 정확히 비교 가능.)
+fn mtime_millis(meta: &fs::Metadata) -> Option<f64> {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as f64)
+}
+
+/// 파일 읽기 결과 — 본문과 함께 수정 시각(mtime)을 돌려준다.
+/// 프론트가 mtime을 보관해 두었다가 외부 변경 감지·덮어쓰기 가드의 기준값으로 쓴다.
+#[derive(serde::Serialize)]
+struct FileData {
+    content: String,
+    mtime: Option<f64>,
+}
+
+/// 지정한 경로의 텍스트 파일을 읽어 본문+mtime으로 반환한다. 정규 파일만 허용한다
 /// (디렉터리·장치 노드 등 거부 → `CON` 같은 경로에서 블로킹 방지).
+/// mtime은 read 직전 stat 기준 — read 사이에 쓰기가 끼면 다음 감지에서 한 번 더 리로드될 뿐 놓치지 않는다.
 #[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
+fn read_file(path: String) -> Result<FileData, String> {
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
     if !meta.is_file() {
         return Err("정규 파일이 아닙니다.".to_string());
     }
-    fs::read_to_string(&path).map_err(|e| e.to_string())
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    Ok(FileData {
+        content,
+        mtime: mtime_millis(&meta),
+    })
 }
 
 /// 문자열을 지정한 경로에 저장한다. 기존 대상이 정규 파일이 아니면 거부한다
 /// (장치/디렉터리 덮어쓰기 방지). 새 파일 생성은 허용.
+/// 저장 후의 mtime을 돌려줘 프론트가 기준값을 갱신한다(자기 저장을 외부 변경으로 오인하지 않도록).
 #[tauri::command]
-fn write_file(path: String, contents: String) -> Result<(), String> {
+fn write_file(path: String, contents: String) -> Result<Option<f64>, String> {
     if let Ok(meta) = fs::metadata(&path) {
         if !meta.is_file() {
             return Err("정규 파일이 아닙니다.".to_string());
         }
     }
-    fs::write(&path, contents).map_err(|e| e.to_string())
+    fs::write(&path, contents).map_err(|e| e.to_string())?;
+    Ok(fs::metadata(&path).ok().and_then(|m| mtime_millis(&m)))
+}
+
+/// 경로의 현재 mtime(epoch ms)을 반환한다. 파일이 없거나(삭제 등) 정규 파일이 아니면 Ok(None).
+/// 창 포커스 시 외부 변경 감지에 쓴다 — 본문을 읽지 않고 stat만 하므로 가볍다.
+#[tauri::command]
+fn file_mtime(path: String) -> Result<Option<f64>, String> {
+    match fs::metadata(&path) {
+        Ok(meta) if meta.is_file() => Ok(mtime_millis(&meta)),
+        Ok(_) => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Windows 예약 장치명(CON/PRN/AUX/NUL/COM1-9/LPT1-9)인지 — 확장자는 무시하고 stem만 본다.
@@ -138,6 +174,82 @@ fn read_image_data_url(path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
 }
 
+/// MIME → 파일 확장자. 붙여넣기 이미지 저장 시 확장자 결정에 쓴다. 지원 안 하면 None.
+fn ext_for_mime(mime: &str) -> Option<&'static str> {
+    Some(match mime {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        "image/svg+xml" => "svg",
+        "image/avif" => "avif",
+        _ => return None,
+    })
+}
+
+/// `data:<mime>;base64,<data>` 형태를 (mime, base64) 로 분해. base64가 아니거나 형식이 다르면 None.
+fn parse_data_url(s: &str) -> Option<(&str, &str)> {
+    let rest = s.strip_prefix("data:")?;
+    let comma = rest.find(',')?;
+    let meta = &rest[..comma]; // 예: "image/png;base64"
+    if !meta.contains("base64") {
+        return None;
+    }
+    let mime = meta.split(';').next()?; // "image/png"
+    Some((mime, &rest[comma + 1..]))
+}
+
+/// `<dir>/<stem>.<ext>`가 이미 있으면 `<stem> 1.<ext>`, `<stem> 2.<ext>`… 로 충돌을 피한 경로를 만든다.
+fn unique_image_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    let mut candidate = dir.join(format!("{stem}.{ext}"));
+    let mut i = 1;
+    while candidate.exists() {
+        candidate = dir.join(format!("{stem} {i}.{ext}"));
+        i += 1;
+    }
+    candidate
+}
+
+/// 붙여넣기(clipboard)한 이미지를 `<doc_dir>/attachments/`에 저장한다.
+/// `data_url`=`data:<mime>;base64,…`, `name_stem`=확장자 없는 파일명(예: "Pasted image 20260209110129").
+/// attachments 폴더가 없으면 만들고, 같은 이름이 있으면 " 1"…을 붙여 충돌을 피한다.
+/// 저장한 파일명(확장자 포함, 폴더 제외)을 반환 → 프론트가 `![[name]]`로 삽입한다.
+#[tauri::command]
+fn save_pasted_image(doc_dir: String, name_stem: String, data_url: String) -> Result<String, String> {
+    // 파일명 가드: 경로 구분자·상위참조·ADS(:) 금지(attachments 폴더 밖 접근/트래버설 차단).
+    if name_stem.is_empty()
+        || name_stem.contains("..")
+        || name_stem.contains('/')
+        || name_stem.contains('\\')
+        || name_stem.contains(':')
+    {
+        return Err("잘못된 파일명입니다.".to_string());
+    }
+    // 문서 폴더는 존재하는 디렉터리여야 한다.
+    let dir_meta = fs::metadata(&doc_dir).map_err(|e| e.to_string())?;
+    if !dir_meta.is_dir() {
+        return Err("문서 폴더가 아닙니다.".to_string());
+    }
+    let (mime, b64) =
+        parse_data_url(&data_url).ok_or_else(|| "이미지 데이터 형식이 잘못되었습니다.".to_string())?;
+    let ext = ext_for_mime(mime).ok_or_else(|| "지원하지 않는 이미지 형식입니다.".to_string())?;
+    let bytes = STANDARD.decode(b64).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_IMAGE_BYTES {
+        return Err("이미지가 너무 큽니다.".to_string());
+    }
+    let attach = Path::new(&doc_dir).join("attachments");
+    fs::create_dir_all(&attach).map_err(|e| e.to_string())?;
+    let path = unique_image_path(&attach, &name_stem, ext);
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "파일명 생성에 실패했습니다.".to_string())?
+        .to_string();
+    fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(file_name)
+}
+
 /// 설정 파일 이름 — 실행 파일과 같은 폴더에 두는 포터블 설정.
 const SETTINGS_FILE: &str = "mdview.config.json";
 
@@ -214,10 +326,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
+            file_mtime,
             startup_file,
             load_settings,
             save_settings,
-            read_image_data_url
+            read_image_data_url,
+            save_pasted_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -225,11 +339,42 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_arg_path, MD_EXTS};
+    use super::{ext_for_mime, parse_data_url, resolve_arg_path, MD_EXTS};
     use std::path::Path;
 
     fn args(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn parses_valid_data_url() {
+        let (mime, b64) = parse_data_url("data:image/png;base64,AAAB").unwrap();
+        assert_eq!(mime, "image/png");
+        assert_eq!(b64, "AAAB");
+    }
+
+    #[test]
+    fn parses_data_url_with_extra_params() {
+        // charset 등 부가 파라미터가 있어도 mime만 정확히 뽑는다.
+        let (mime, b64) = parse_data_url("data:image/jpeg;charset=utf-8;base64,Zm9v").unwrap();
+        assert_eq!(mime, "image/jpeg");
+        assert_eq!(b64, "Zm9v");
+    }
+
+    #[test]
+    fn rejects_non_base64_or_malformed_data_url() {
+        assert!(parse_data_url("data:image/png,AAAB").is_none()); // base64 아님(URL 인코딩)
+        assert!(parse_data_url("image/png;base64,AAAB").is_none()); // data: 접두어 없음
+        assert!(parse_data_url("data:image/png;base64").is_none()); // 콤마 없음
+    }
+
+    #[test]
+    fn maps_known_image_mimes_only() {
+        assert_eq!(ext_for_mime("image/png"), Some("png"));
+        assert_eq!(ext_for_mime("image/jpeg"), Some("jpg"));
+        assert_eq!(ext_for_mime("image/svg+xml"), Some("svg"));
+        assert_eq!(ext_for_mime("text/plain"), None);
+        assert_eq!(ext_for_mime("application/octet-stream"), None);
     }
 
     #[test]
